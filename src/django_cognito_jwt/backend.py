@@ -1,4 +1,6 @@
 import logging
+import importlib
+from sqlite3 import IntegrityError
 
 from django.contrib.auth import get_user_model
 from django.utils.encoding import smart_text
@@ -10,9 +12,38 @@ from rest_framework.authentication import (
 
 from django_cognito_jwt.validator import TokenValidator, TokenError
 
+
 logger = logging.getLogger(__name__)
 
-USER_MODEL = get_user_model()
+
+def get_or_create_for_cognito(payload):
+    cognito_id = payload['sub']
+
+    user_model = get_user_model()
+
+    try:
+        return user_model.objects.get(cognito_id=cognito_id)
+    except user_model.DoesNotExist:
+        pass
+
+    try:
+        first_name = payload.get('given_name', None)
+        last_names = [
+            payload.get('middle_name', None),
+            payload.get('family_name', None)
+        ]
+        last_name = ' '.join(filter(None, last_names)) or None
+
+        user = user_model.objects.create(
+            cognito_id=cognito_id,
+            email=payload['email'],
+            is_active=True,
+            first_name=first_name,
+            last_name=last_name)
+    except IntegrityError:
+        user = user_model.objects.get(cognito_id=cognito_id)
+
+    return user
 
 
 class JSONWebTokenAuthentication(BaseAuthentication):
@@ -38,7 +69,15 @@ class JSONWebTokenAuthentication(BaseAuthentication):
         except TokenError:
             raise exceptions.AuthenticationFailed()
 
-        user = USER_MODEL.objects.get_or_create_for_cognito(jwt_payload)
+        try:
+            user_function_import = settings.COGNITO_USER_CREATOR_FUNCTION
+            module, func = user_function_import.rsplit('.', 1)
+            module = importlib.import_module(module)
+            user_function = getattr(module, func)
+            user = user_function(jwt_payload)
+        except:
+            user = get_or_create_for_cognito(jwt_payload)
+
         return (user, jwt_token)
 
     def get_jwt_token(self, request):
