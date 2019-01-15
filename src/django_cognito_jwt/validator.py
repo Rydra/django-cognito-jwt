@@ -11,10 +11,10 @@ class TokenError(Exception):
 
 
 class TokenValidator:
-    def __init__(self, aws_region, aws_user_pool, audience):
+    def __init__(self, aws_region, aws_user_pool, api_scope):
         self.aws_region = aws_region
         self.aws_user_pool = aws_user_pool
-        self.audience = audience
+        self.api_scope = api_scope
 
     @cached_property
     def pool_url(self):
@@ -47,10 +47,13 @@ class TokenValidator:
             jwt_data = jwt.decode(
                 token,
                 public_key,
-                audience=self.audience,
                 issuer=self.pool_url,
                 algorithms=['RS256'],
             )
+
+            if jwt_data['token_use'] != 'access' or self.api_scope not in jwt_data['scope'].split(' '):
+                raise TokenError('Invalid scope')
         except (jwt.InvalidTokenError, jwt.ExpiredSignature, jwt.DecodeError) as exc:
             raise TokenError(str(exc))
+
         return jwt_data

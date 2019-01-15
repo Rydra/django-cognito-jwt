@@ -1,22 +1,21 @@
-import logging
 import importlib
+import logging
 from sqlite3 import IntegrityError
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.utils.encoding import smart_text
 from django.utils.translation import ugettext as _
-from django.conf import settings
 from rest_framework import exceptions
 from rest_framework.authentication import (
     BaseAuthentication, get_authorization_header)
 
 from django_cognito_jwt.validator import TokenValidator, TokenError
 
-
 logger = logging.getLogger(__name__)
 
 
-def get_or_create_for_cognito(payload):
+def get_or_create_for_cognito(payload, access_token):
     cognito_id = payload['sub']
 
     user_model = get_user_model()
@@ -53,7 +52,7 @@ class JSONWebTokenAuthentication(BaseAuthentication):
         self._jwt_validator = TokenValidator(
             settings.COGNITO_AWS_REGION,
             settings.COGNITO_USER_POOL,
-            settings.COGNITO_AUDIENCE)
+            settings.COGNITO_API_SCOPE)
 
         super().__init__()
 
@@ -74,9 +73,9 @@ class JSONWebTokenAuthentication(BaseAuthentication):
             module, func = user_function_import.rsplit('.', 1)
             module = importlib.import_module(module)
             user_function = getattr(module, func)
-            user = user_function(jwt_payload)
+            user = user_function(jwt_payload, jwt_token)
         except:
-            user = get_or_create_for_cognito(jwt_payload)
+            user = get_or_create_for_cognito(jwt_payload, jwt_token)
 
         return (user, jwt_token)
 
