@@ -1,13 +1,34 @@
 import json
-import jwt
-import requests
-from jwt.algorithms import RSAAlgorithm
 
-from django.utils.functional import cached_property
+from decorator import decorator
+
+import jwt
+import redis
+import requests
+from django.conf import settings
+from jwt.algorithms import RSAAlgorithm
 
 
 class TokenError(Exception):
     pass
+
+
+@decorator
+def cached(func, *args, **kwargs):
+    redis_client = redis.StrictRedis.from_url(settings.REDIS_URL)
+
+    try:
+        ser_jwt_data = redis_client.get('jwks')
+
+        if not ser_jwt_data:
+            jwt_web_keys = func(*args, **kwargs)
+            redis_client.setex('jwks', 3600, json.dumps(jwt_web_keys))
+        else:
+            jwt_web_keys = json.loads(ser_jwt_data.decode('utf-8'))
+
+        return jwt_web_keys
+    except redis.exceptions.ConnectionError:
+        return func(*args, **kwargs)
 
 
 class TokenValidator:
@@ -16,17 +37,18 @@ class TokenValidator:
         self.aws_user_pool = aws_user_pool
         self.api_scope = api_scope
 
-    @cached_property
+    @property
     def pool_url(self):
-        return 'https://cognito-idp.%s.amazonaws.com/%s' % (
-            self.aws_region, self.aws_user_pool)
+        return 'https://cognito-idp.%s.amazonaws.com/%s' % (self.aws_region, self.aws_user_pool)
 
-    @cached_property
-    def _json_web_keys(self):
+    @cached
+    def _get_json_web_keys(self):
         response = requests.get(self.pool_url + '/.well-known/jwks.json')
         response.raise_for_status()
+
         json_data = response.json()
-        return {item['kid']: json.dumps(item) for item in json_data['keys']}
+        jwt_web_keys = {item['kid']: json.dumps(item) for item in json_data['keys']}
+        return jwt_web_keys
 
     def _get_public_key(self, token):
         try:
@@ -34,7 +56,7 @@ class TokenValidator:
         except jwt.DecodeError as exc:
             raise TokenError(str(exc))
 
-        jwk_data = self._json_web_keys.get(headers['kid'])
+        jwk_data = self._get_json_web_keys().get(headers['kid'])
         if jwk_data:
             return RSAAlgorithm.from_jwk(jwk_data)
 

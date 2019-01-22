@@ -11,6 +11,8 @@ cryptography = "*"
 djangorestframework = "*"
 pyjwt = "*"
 requests = "*"
+redis = "*"
+decorator = "*"
 
 [requires]
 python_version = "3.6"

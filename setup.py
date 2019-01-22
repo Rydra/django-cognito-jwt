@@ -6,6 +6,8 @@ install_requires = [
     'djangorestframework',
     'pyjwt',
     'requests',
+    'redis',
+    'decorator'
 ]
 
 
