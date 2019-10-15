@@ -74,8 +74,12 @@ class JSONWebTokenAuthentication(BaseAuthentication):
             module = importlib.import_module(module)
             user_function = getattr(module, func)
             user = user_function(jwt_payload, jwt_token)
-        except:
-            user = get_or_create_for_cognito(jwt_payload, jwt_token)
+        except Exception as e:
+            if hasattr(settings, 'USE_FALLBACK') and settings.USE_FALLBACK:
+                logger.warning(f'Could not use the user function authenticator, falling back to cognito. Reason: {str(e)}')
+                user = get_or_create_for_cognito(jwt_payload, jwt_token)
+            else:
+                raise exceptions.AuthenticationFailed(str(e))
 
         return (user, jwt_token)
 

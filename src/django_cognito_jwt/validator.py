@@ -71,6 +71,7 @@ class TokenValidator:
                 public_key,
                 issuer=self.pool_url,
                 algorithms=['RS256'],
+                options={'verify_aud': False}
             )
 
             if jwt_data['token_use'] != 'access' or self.api_scope not in jwt_data['scope'].split(' '):
